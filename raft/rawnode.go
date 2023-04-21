@@ -70,12 +70,53 @@ type Ready struct {
 type RawNode struct {
 	Raft *Raft
 	// Your Data Here (2A).
+	Config    *Config
+	lastReady Ready
 }
 
 // NewRawNode returns a new RawNode given configuration and a list of raft peers.
 func NewRawNode(config *Config) (*RawNode, error) {
-	// Your Code Here (2A).
-	return nil, nil
+	rn := &RawNode{
+		Raft:   newRaft(config),
+		Config: config,
+	}
+	lastready, _ := rn.fillReady(false)
+	rn.lastReady = *lastready
+	return rn, nil
+}
+
+func (rn *RawNode) fillReady(diff bool) (*Ready, bool) {
+	rf := rn.Raft
+	isDiff := false
+	ready := &Ready{}
+	s := rn.getSoft()
+	h := *rn.getHard()
+	if diff && rn.lastReady.HardState.Term == h.Term && rn.lastReady.HardState.Vote == h.Vote && rn.lastReady.HardState.Commit == h.Commit {
+		ready.HardState = pb.HardState{}
+	} else {
+		ready.HardState = h
+		if diff {
+			isDiff = true
+		}
+	}
+
+	if diff && rn.lastReady.SoftState != nil && rn.lastReady.SoftState.Lead == s.Lead && rn.lastReady.SoftState.RaftState == s.RaftState {
+		ready.SoftState = nil
+	} else {
+		ready.SoftState = s
+		if diff {
+			isDiff = true
+		}
+	}
+	ready.Messages = nil
+	if len(rf.msgs) != 0 {
+		ready.Messages = make([]pb.Message, 0)
+		ready.Messages = append(ready.Messages, rf.msgs...)
+	}
+
+	ready.Entries = rf.RaftLog.unstableEntries()
+	ready.CommittedEntries = rf.RaftLog.nextEnts()
+	return ready, isDiff
 }
 
 // Tick advances the internal logical clock by a single tick.
@@ -140,21 +181,74 @@ func (rn *RawNode) Step(m pb.Message) error {
 	return ErrStepPeerNotFound
 }
 
+func (rn *RawNode) getSoft() *SoftState {
+	r := rn.Raft
+	nowSoft := &SoftState{
+		Lead:      r.Lead,
+		RaftState: r.State,
+	}
+	// if rn.lastReady.SoftState != nil {
+	// 	if rn.lastReady.SoftState.Lead == nowSoft.Lead && rn.lastReady.SoftState.RaftState == nowSoft.RaftState {
+	// 		return nil
+	// 	}
+	// }
+	// rn.lastReady.SoftState = nowSoft
+	return nowSoft
+}
+
+func (rn *RawNode) getHard() *pb.HardState {
+	r := rn.Raft
+	nowHard := &pb.HardState{
+		Term:                 r.Term,
+		Vote:                 r.Vote,
+		Commit:               r.RaftLog.committed,
+		XXX_NoUnkeyedLiteral: struct{}{},
+		XXX_unrecognized:     nil,
+		XXX_sizecache:        0,
+	}
+	// if rn.lastReady.HardState.Term == nowHard.Term && rn.lastReady.HardState.Vote == nowHard.Vote && rn.lastReady.HardState.Commit == nowHard.Commit {
+	// 	return nil
+	// }
+	// rn.lastReady.HardState = *nowHard
+	return nowHard
+}
+
 // Ready returns the current point-in-time state of this RawNode.
 func (rn *RawNode) Ready() Ready {
-	// Your Code Here (2A).
-	return Ready{}
+	rf := rn.Raft
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	ready, _ := rn.fillReady(true)
+	return *ready
+
 }
 
 // HasReady called when RawNode user need to check if any Ready pending.
 func (rn *RawNode) HasReady() bool {
-	// Your Code Here (2A).
-	return false
+	rf := rn.Raft
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	_, diff := rn.fillReady(true)
+	return !diff
 }
 
 // Advance notifies the RawNode that the application has applied and saved progress in the
 // last Ready results.
 func (rn *RawNode) Advance(rd Ready) {
+	rf := rn.Raft
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	r := rn.Raft
+	g := r.RaftLog
+	for _, v := range rd.Messages {
+		rn.Step(v)
+	}
+	g.stabled = g.LastIndex()
+	g.applied = g.committed
+
+	ready, _ := rn.fillReady(true)
+	rn.lastReady = *ready
+
 	// Your Code Here (2A).
 }
 
