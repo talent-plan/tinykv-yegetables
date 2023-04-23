@@ -28,6 +28,10 @@ func GetCFFromTxn(txn *badger.Txn, cf string, key []byte) (val []byte, err error
 	return
 }
 
+func PutCFFromTxn(txn *badger.Txn, cf string, key []byte, val []byte) error {
+	return txn.Set(KeyWithCF(cf, key), val)
+}
+
 func PutCF(engine *badger.DB, cf string, key []byte, val []byte) error {
 	return engine.Update(func(txn *badger.Txn) error {
 		return txn.Set(KeyWithCF(cf, key), val)
@@ -76,6 +80,10 @@ func DeleteCF(engine *badger.DB, cf string, key []byte) error {
 	return engine.Update(func(txn *badger.Txn) error {
 		return txn.Delete(KeyWithCF(cf, key))
 	})
+}
+
+func DeleteCFFromTxn(txn *badger.Txn, cf string, key []byte) error {
+	return txn.Delete(KeyWithCF(cf, key))
 }
 
 func DeleteRange(db *badger.DB, startKey, endKey []byte) error {
