@@ -41,10 +41,10 @@ func SpawnClientsAndWait(t *testing.T, ch chan bool, ncli int, fn func(me int, t
 		ok := <-ca[cli]
 		// log.Infof("SpawnClientsAndWait: client %d is done\n", cli)
 		if ok == false {
-			t.Fatalf("failure")
+			log.Error("failure")
+			t.Fail()
 		}
 	}
-
 }
 
 // predict effect of Append(k, val) if old value is prev.
