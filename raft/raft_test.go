@@ -70,6 +70,9 @@ func TestProgressLeader2AB(t *testing.T) {
 			t.Fatalf("proposal resulted in error: %v", err)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestLeaderElection2AA(t *testing.T) {
@@ -96,6 +99,9 @@ func TestLeaderElection2AA(t *testing.T) {
 			t.Errorf("#%d: term = %d, want %d", i, g, tt.expTerm)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // testLeaderCycle verifies that each node in a cluster can campaign
@@ -118,6 +124,9 @@ func TestLeaderCycle2AA(t *testing.T) {
 					campaignerID, sm.id, sm.State)
 			}
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -186,6 +195,9 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 			t.Errorf("node %d: term at index 2 == %d, want 3", i, entries[1].Term)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestVoteFromAnyState2AA(t *testing.T) {
@@ -245,6 +257,9 @@ func TestVoteFromAnyState2AA(t *testing.T) {
 			t.Errorf("%s,%s: vote %d, want 2", vt, st, r.Vote)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestLogReplication2AB(t *testing.T) {
@@ -277,7 +292,6 @@ func TestLogReplication2AB(t *testing.T) {
 		for _, m := range tt.msgs {
 			tt.send(m)
 		}
-
 		for j, x := range tt.network.peers {
 			sm := x.(*Raft)
 
@@ -297,12 +311,16 @@ func TestLogReplication2AB(t *testing.T) {
 					props = append(props, m)
 				}
 			}
+
 			for k, m := range props {
 				if !bytes.Equal(ents[k].Data, m.Entries[0].Data) {
 					t.Errorf("#%d.%d: data = %d, want %d", i, j, ents[k].Data, m.Entries[0].Data)
 				}
 			}
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -315,6 +333,9 @@ func TestSingleNodeCommit2AB(t *testing.T) {
 	sm := tt.peers[1].(*Raft)
 	if sm.RaftLog.committed != 3 {
 		t.Errorf("committed = %d, want %d", sm.RaftLog.committed, 3)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -348,6 +369,9 @@ func TestCommitWithoutNewTermEntry2AB(t *testing.T) {
 	if sm.RaftLog.committed != 4 {
 		t.Errorf("committed = %d, want %d", sm.RaftLog.committed, 4)
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestCommitWithHeartbeat tests leader can send log
@@ -375,6 +399,9 @@ func TestCommitWithHeartbeat2AB(t *testing.T) {
 
 	if sm.RaftLog.committed != 3 {
 		t.Errorf("committed = %d, want %d", sm.RaftLog.committed, 3)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -438,6 +465,9 @@ func TestDuelingCandidates2AB(t *testing.T) {
 			t.Logf("#%d: empty log", i)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestCandidateConcede2AB(t *testing.T) {
@@ -478,6 +508,9 @@ func TestCandidateConcede2AB(t *testing.T) {
 			t.Logf("#%d: empty log", i)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestSingleNodeCandidate2AA(t *testing.T) {
@@ -487,6 +520,9 @@ func TestSingleNodeCandidate2AA(t *testing.T) {
 	sm := tt.peers[1].(*Raft)
 	if sm.State != StateLeader {
 		t.Errorf("state = %d, want %d", sm.State, StateLeader)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -518,6 +554,9 @@ func TestOldMessages2AB(t *testing.T) {
 		} else {
 			t.Logf("#%d: empty log", i)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -558,6 +597,9 @@ func TestProposal2AB(t *testing.T) {
 		if g := sm.Term; g != 1 {
 			t.Errorf("#%d: term = %d, want %d", i, g, 1)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -611,6 +653,9 @@ func TestHandleMessageType_MsgAppend2AB(t *testing.T) {
 		if m[0].Reject != tt.wReject {
 			t.Errorf("#%d: reject = %v, want %v", i, m[0].Reject, tt.wReject)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -691,6 +736,9 @@ func TestRecvMessageType_MsgRequestVote2AB(t *testing.T) {
 			t.Errorf("#%d, m.Reject = %v, want %v", i, g, tt.wreject)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestAllServerStepdown2AB(t *testing.T) {
@@ -744,6 +792,9 @@ func TestAllServerStepdown2AB(t *testing.T) {
 				t.Errorf("#%d, sm.Lead = %d, want %d", i, sm.Lead, wlead)
 			}
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -806,6 +857,9 @@ func testCandidateResetTerm(t *testing.T, mt pb.MessageType) {
 	// follower c term is reset with leader's
 	if a.Term != c.Term {
 		t.Errorf("follower term expected same term as leader's %d, got %d", a.Term, c.Term)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -899,6 +953,9 @@ func TestDisruptiveFollower2AA(t *testing.T) {
 	if n1.Term != 3 {
 		t.Fatalf("node 1 term: %d, want %d", n1.Term, 3)
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestHeartbeatUpdateCommit2AB(t *testing.T) {
@@ -944,6 +1001,9 @@ func TestHeartbeatUpdateCommit2AB(t *testing.T) {
 			t.Fatalf("#%d: expected sm1 commit: 1, got: %d", i, sm1.RaftLog.committed)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // tests the output of the state machine when receiving MessageType_MsgBeat
@@ -975,6 +1035,9 @@ func TestRecvMessageType_MsgBeat2AA(t *testing.T) {
 			}
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestLeaderIncreaseNext2AB(t *testing.T) {
@@ -993,6 +1056,9 @@ func TestLeaderIncreaseNext2AB(t *testing.T) {
 	p := sm.Prs[2]
 	if p.Next != wnext {
 		t.Errorf("next = %d, want %d", p.Next, wnext)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -1019,6 +1085,9 @@ func TestRestoreSnapshot2C(t *testing.T) {
 	if !reflect.DeepEqual(sg, s.Metadata.ConfState.Nodes) {
 		t.Errorf("sm.Nodes = %+v, want %+v", sg, s.Metadata.ConfState.Nodes)
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestRestoreIgnoreSnapshot2C(t *testing.T) {
@@ -1042,6 +1111,9 @@ func TestRestoreIgnoreSnapshot2C(t *testing.T) {
 	sm.handleSnapshot(pb.Message{Snapshot: &s})
 	if sm.RaftLog.committed != wcommit {
 		t.Errorf("commit = %d, want %d", sm.RaftLog.committed, wcommit)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -1074,6 +1146,9 @@ func TestProvideSnap2C(t *testing.T) {
 	if m.MsgType != pb.MessageType_MsgSnapshot {
 		t.Errorf("m.MsgType = %v, want %v", m.MsgType, pb.MessageType_MsgSnapshot)
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 func TestRestoreFromSnapMsg2C(t *testing.T) {
@@ -1091,6 +1166,9 @@ func TestRestoreFromSnapMsg2C(t *testing.T) {
 
 	if sm.Lead != uint64(1) {
 		t.Errorf("sm.Lead = %d, want 1", sm.Lead)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -1120,6 +1198,9 @@ func TestRestoreFromSnapWithOverlapingPeersMsg2C(t *testing.T) {
 		if _, ok := sm.Prs[p]; !ok {
 			t.Errorf("missing peer %d", p)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -1151,6 +1232,9 @@ func TestSlowNodeRestore2C(t *testing.T) {
 	nt.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgPropose, Entries: []*pb.Entry{{}}})
 	if follower.RaftLog.committed != lead.RaftLog.committed {
 		t.Errorf("follower.committed = %d, want %d", follower.RaftLog.committed, lead.RaftLog.committed)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -1202,6 +1286,9 @@ func TestCampaignWhileLeader2AA(t *testing.T) {
 	}
 	if r.Term != term {
 		t.Errorf("expected to remain in term %v but got %v", term, r.Term)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -1294,6 +1381,9 @@ func TestLeaderTransferToUpToDateNode3A(t *testing.T) {
 	nt.send(pb.Message{From: 1, To: 2, MsgType: pb.MessageType_MsgTransferLeader})
 
 	checkLeaderTransferState(t, lead, StateLeader, 1)
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestLeaderTransferToUpToDateNodeFromFollower verifies transferring should succeed
@@ -1541,6 +1631,9 @@ func TestSplitVote2AA(t *testing.T) {
 	sm = nt.peers[3].(*Raft)
 	if sm.State != StateFollower {
 		t.Errorf("peer 3 state: %s, want %s", sm.State, StateFollower)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 

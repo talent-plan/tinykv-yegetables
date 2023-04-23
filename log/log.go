@@ -16,6 +16,7 @@ import (
 	"strings"
 )
 
+const calldepth = 4
 const (
 	Ldate         = log.Ldate
 	Llongfile     = log.Llongfile
@@ -51,11 +52,22 @@ const (
 const FORMAT_TIME_DAY string = "20060102"
 const FORMAT_TIME_HOUR string = "2006010215"
 
-var _log *Logger = New()
+var _log *Logger
+var _logfile *os.File
 
 func init() {
+	var err error
+	_logfile, err = os.Create("/tmp/tinykv")
+	if err != nil {
+		fmt.Println("create logfile error", err)
+	} else {
+		fmt.Println("logfile-name:", _logfile.Name())
+	}
+	//_logfile, _ = os.CreateTemp("/tmp", "tinykv-")
+	_log = NewLogger(_logfile, "")
 	SetFlags(Ldate | Ltime | Lshortfile)
-	SetHighlighting(runtime.GOOS != "windows")
+	SetHighlighting(runtime.GOOS != "linux")
+	SetLevel(LOG_LEVEL_DEBUG | LOG_LEVEL_INFO | LOG_LEVEL_ERROR)
 }
 
 func GlobalLogger() *log.Logger {
@@ -179,7 +191,7 @@ func (l *Logger) logf(t LogType, format string, v ...interface{}) {
 	} else {
 		s = "[" + logStr + "] " + fmt.Sprintf(format, v...)
 	}
-	l._log.Output(4, s)
+	l._log.Output(calldepth, s)
 }
 
 func (l *Logger) Fatal(v ...interface{}) {
@@ -222,6 +234,11 @@ func (l *Logger) Debug(v ...interface{}) {
 
 func (l *Logger) Debugf(format string, v ...interface{}) {
 	l.logf(LOG_DEBUG, format, v...)
+}
+func TruncateFile() {
+	_logfile.Truncate(0)
+	_logfile.Seek(0, 0)
+	//_logfile.Sync()
 }
 
 func (l *Logger) Info(v ...interface{}) {
@@ -276,7 +293,7 @@ func NewLogger(w io.Writer, prefix string) *Logger {
 	if l := os.Getenv("LOG_LEVEL"); len(l) != 0 {
 		level = StringToLogLevel(os.Getenv("LOG_LEVEL"))
 	} else {
-		level = LOG_LEVEL_INFO
+		level = LOG_LEVEL_DEBUG
 	}
 	return &Logger{_log: log.New(w, prefix, LstdFlags), level: level, highlighting: true}
 }

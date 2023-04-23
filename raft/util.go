@@ -127,3 +127,35 @@ func IsResponseMsg(msgt pb.MessageType) bool {
 func isHardStateEqual(a, b pb.HardState) bool {
 	return a.Term == b.Term && a.Vote == b.Vote && a.Commit == b.Commit
 }
+func PrintMsg(msgs []pb.Message) string {
+	s := fmt.Sprintf("len(msgs)=%d\n", len(msgs))
+	for _, msg := range msgs {
+		s += fmt.Sprintf("%d->%d[t%d,c%d,prev[%d:%d]-[rej:%v] type=%v  \n", msg.From, msg.To, msg.Term, msg.Commit, msg.Index, msg.LogTerm, msg.Reject, msg.MsgType)
+		s += fmt.Sprintf("--entries----%v\n", PrintPointEntries(msg.Entries))
+	}
+	return s
+}
+func PrintPointEntries(entries []*pb.Entry) string {
+	if entries == nil {
+		return "entry is nil"
+	}
+	s := fmt.Sprintf("len(entriess)=%d\n", len(entries))
+	for _, entry := range entries {
+		if entry != nil {
+			s += fmt.Sprintf("[t%d:i%d]type=%v,", entry.Term, entry.Index, entry.EntryType)
+			s += fmt.Sprintf("%v\n", entry.Data)
+		}
+	}
+	return s
+}
+func PrintEntries(entries []pb.Entry) string {
+	if entries == nil {
+		return "entry is nil"
+	}
+	s := fmt.Sprintf("len(entriess)=%d\n", len(entries))
+	for _, entry := range entries {
+		s += fmt.Sprintf("[t%d:i%d]type=%v,", entry.Term, entry.Index, entry.EntryType)
+		s += fmt.Sprintf("%v\n", entry.Data)
+	}
+	return s
+}

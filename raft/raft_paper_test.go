@@ -27,6 +27,7 @@ package raft
 
 import (
 	"fmt"
+	"github.com/pingcap-incubator/tinykv/log"
 	"reflect"
 	"sort"
 	"testing"
@@ -34,6 +35,10 @@ import (
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
 
+func MyCleanup() {
+	log.TruncateFile()
+	fmt.Println("clean logfile ok")
+}
 func TestFollowerUpdateTermFromMessage2AA(t *testing.T) {
 	testUpdateTermFromMessage(t, StateFollower)
 }
@@ -69,6 +74,9 @@ func testUpdateTermFromMessage(t *testing.T, state StateType) {
 	if r.State != StateFollower {
 		t.Errorf("state = %v, want %v", r.State, StateFollower)
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestStartAsFollower tests that when servers start up, they begin as followers.
@@ -77,6 +85,9 @@ func TestStartAsFollower2AA(t *testing.T) {
 	r := newTestRaft(1, []uint64{1, 2, 3}, 10, 1, NewMemoryStorage())
 	if r.State != StateFollower {
 		t.Errorf("state = %s, want %s", r.State, StateFollower)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -97,7 +108,6 @@ func TestLeaderBcastBeat2AA(t *testing.T) {
 	for i := 0; i < hi; i++ {
 		r.tick()
 	}
-
 	msgs := r.readMessages()
 	sort.Sort(messageSlice(msgs))
 	wmsgs := []pb.Message{
@@ -105,7 +115,11 @@ func TestLeaderBcastBeat2AA(t *testing.T) {
 		{From: 1, To: 3, Term: 1, MsgType: pb.MessageType_MsgHeartbeat},
 	}
 	if !reflect.DeepEqual(msgs, wmsgs) {
-		t.Errorf("msgs = %v, want %v", msgs, wmsgs)
+		t.Errorf("\nmsgs=%s\nwant=%s)\n", PrintMsg(msgs), PrintMsg(wmsgs))
+		//t.Errorf("\nmsgs = %+v \nwant = %+v", msgs, wmsgs)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -157,7 +171,11 @@ func testNonleaderStartElection(t *testing.T, state StateType) {
 		{From: 1, To: 3, Term: 2, MsgType: pb.MessageType_MsgRequestVote},
 	}
 	if !reflect.DeepEqual(msgs, wmsgs) {
-		t.Errorf("msgs = %v, want %v", msgs, wmsgs)
+		//t.Errorf("msgs = %v, want %v", msgs, wmsgs)
+		t.Errorf("\nmsgs=%s\nwant=%s)\n", PrintMsg(msgs), PrintMsg(wmsgs))
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -202,6 +220,9 @@ func TestLeaderElectionInOneRoundRPC2AA(t *testing.T) {
 			t.Errorf("#%d: term = %d, want %d", i, g, 1)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestFollowerVote tests that each follower will vote for at most one
@@ -232,8 +253,11 @@ func TestFollowerVote2AA(t *testing.T) {
 			{From: 1, To: tt.nvote, Term: 1, MsgType: pb.MessageType_MsgRequestVoteResponse, Reject: tt.wreject},
 		}
 		if !reflect.DeepEqual(msgs, wmsgs) {
-			t.Errorf("#%d: msgs = %v, want %v", i, msgs, wmsgs)
+			t.Errorf("#%d: msgs = %v, want %v", i, PrintMsg(msgs), PrintMsg(wmsgs))
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -262,6 +286,9 @@ func TestCandidateFallback2AA(t *testing.T) {
 		if g := r.Term; g != tt.Term {
 			t.Errorf("#%d: term = %d, want %d", i, g, tt.Term)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -299,6 +326,9 @@ func testNonleaderElectionTimeoutRandomized(t *testing.T, state StateType) {
 		if !timeouts[d] {
 			t.Errorf("timeout in %d ticks should happen", d)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -350,6 +380,9 @@ func testNonleadersElectionTimeoutNonconflict(t *testing.T, state StateType) {
 	if g := float64(conflicts) / 1000; g > 0.3 {
 		t.Errorf("probability of conflicts = %v, want <= 0.3", g)
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestLeaderStartReplication tests that when receiving client proposals,
@@ -374,6 +407,7 @@ func TestLeaderStartReplication2AB(t *testing.T) {
 	if g := r.RaftLog.LastIndex(); g != li+1 {
 		t.Errorf("lastIndex = %d, want %d", g, li+1)
 	}
+
 	if g := r.RaftLog.committed; g != li {
 		t.Errorf("committed = %d, want %d", g, li)
 	}
@@ -386,10 +420,13 @@ func TestLeaderStartReplication2AB(t *testing.T) {
 		{From: 1, To: 3, Term: 1, MsgType: pb.MessageType_MsgAppend, Index: li, LogTerm: 1, Entries: []*pb.Entry{&ent}, Commit: li},
 	}
 	if !reflect.DeepEqual(msgs, wmsgs) {
-		t.Errorf("msgs = %+v, want %+v", msgs, wmsgs)
+		t.Errorf("msgs = %+v, want %+v", PrintMsg(msgs), PrintMsg(wmsgs))
 	}
 	if g := r.RaftLog.unstableEntries(); !reflect.DeepEqual(g, wents) {
 		t.Errorf("ents = %+v, want %+v", g, wents)
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -418,7 +455,7 @@ func TestLeaderCommitEntry2AB(t *testing.T) {
 	}
 	wents := []pb.Entry{{Index: li + 1, Term: 1, Data: []byte("some data")}}
 	if g := r.RaftLog.nextEnts(); !reflect.DeepEqual(g, wents) {
-		t.Errorf("nextEnts = %+v, want %+v", g, wents)
+		t.Errorf("nextEnts[a%d,c%d] = %+v, want %+v", r.RaftLog.applied, r.RaftLog.committed, g, wents)
 	}
 	msgs := r.readMessages()
 	sort.Sort(messageSlice(msgs))
@@ -432,6 +469,9 @@ func TestLeaderCommitEntry2AB(t *testing.T) {
 		if m.Commit != li+1 {
 			t.Errorf("commit = %d, want %d", m.Commit, li+1)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -470,8 +510,11 @@ func TestLeaderAcknowledgeCommit2AB(t *testing.T) {
 		}
 
 		if g := r.RaftLog.committed > li; g != tt.wack {
-			t.Errorf("#%d: ack commit = %v, want %v", i, g, tt.wack)
+			t.Errorf("#%d: ack commit = %v, want %v  %d>%d", i, g, tt.wack, r.RaftLog.committed, li)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -505,6 +548,9 @@ func TestLeaderCommitPrecedingEntries2AB(t *testing.T) {
 		if g := r.RaftLog.nextEnts(); !reflect.DeepEqual(g, wents) {
 			t.Errorf("#%d: ents = %+v, want %+v", i, g, wents)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -561,6 +607,9 @@ func TestFollowerCommitEntry2AB(t *testing.T) {
 			t.Errorf("#%d: nextEnts = %v, want %v", i, g, wents)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestFollowerCheckMessageType_MsgAppend tests that if the follower does not find an
@@ -606,6 +655,9 @@ func TestFollowerCheckMessageType_MsgAppend2AB(t *testing.T) {
 		if msgs[0].Reject != tt.wreject {
 			t.Errorf("#%d: reject = %+v, want %+v", i, msgs[0].Reject, tt.wreject)
 		}
+	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
 	}
 }
 
@@ -670,9 +722,13 @@ func TestFollowerAppendEntries2AB(t *testing.T) {
 			wunstable = append(wunstable, *ent)
 		}
 		if g := r.RaftLog.unstableEntries(); !reflect.DeepEqual(g, wunstable) {
-			t.Errorf("#%d: unstableEnts = %+v, want %+v", i, g, wunstable)
+			t.Errorf("#%d: unstableEnts[%d-%d] = %+v, want %+v", i, r.RaftLog.stabled, r.RaftLog.LastIndex(), g, wunstable)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
+
 }
 
 // TestLeaderSyncFollowerLog tests that the leader could bring a follower's log
@@ -752,6 +808,9 @@ func TestLeaderSyncFollowerLog2AB(t *testing.T) {
 			t.Errorf("#%d: log diff:\n%s", i, g)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestVoteRequest tests that the vote request includes information about the candidate’s log
@@ -800,6 +859,9 @@ func TestVoteRequest2AB(t *testing.T) {
 			}
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestVoter tests the voter denies its vote if its own log is more up-to-date
@@ -845,6 +907,9 @@ func TestVoter2AB(t *testing.T) {
 			t.Errorf("#%d: reject = %t, want %t", i, m.Reject, tt.wreject)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 // TestLeaderOnlyCommitsLogFromCurrentTerm tests that only log entries from the leader’s
@@ -879,6 +944,9 @@ func TestLeaderOnlyCommitsLogFromCurrentTerm2AB(t *testing.T) {
 			t.Errorf("#%d: commit = %d, want %d", i, r.RaftLog.committed, tt.wcommit)
 		}
 	}
+	if !t.Failed() {
+		t.Cleanup(MyCleanup)
+	}
 }
 
 type messageSlice []pb.Message
@@ -895,18 +963,19 @@ func commitNoopEntry(r *Raft, s *MemoryStorage) {
 		if id == r.id {
 			continue
 		}
-
 		r.sendAppend(id)
 	}
 	// simulate the response of MessageType_MsgAppend
 	msgs := r.readMessages()
 	for _, m := range msgs {
 		if m.MsgType != pb.MessageType_MsgAppend || len(m.Entries) != 1 || m.Entries[0].Data != nil {
+			fmt.Printf("msg=%+v\n", m)
 			panic("not a message to append noop entry")
 		}
 		r.Step(acceptAndReply(m))
 	}
 	// ignore further messages to refresh followers' commit index
+	log.Debugf("commit noop log ok\n")
 	r.readMessages()
 	s.Append(r.RaftLog.unstableEntries())
 	r.RaftLog.applied = r.RaftLog.committed
@@ -918,6 +987,7 @@ func acceptAndReply(m pb.Message) pb.Message {
 		panic("type should be MessageType_MsgAppend")
 	}
 	// Note: reply message don't contain LogTerm
+	log.Debugf("S%d->S%d reply-index=%d\n", m.To, m.From, m.Index+uint64(len(m.Entries)))
 	return pb.Message{
 		From:    m.To,
 		To:      m.From,
