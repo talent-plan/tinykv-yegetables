@@ -16,6 +16,9 @@ package raft
 
 import (
 	"errors"
+	"github.com/pingcap-incubator/tinykv/log"
+	"math/rand"
+	"sync"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/eraftpb"
 )
@@ -108,7 +111,9 @@ type Progress struct {
 }
 
 type Raft struct {
-	id uint64
+	mu   sync.Mutex
+	conf *Config
+	id   uint64
 
 	Term uint64
 	Vote uint64
@@ -157,6 +162,7 @@ type Raft struct {
 	// value.
 	// (Used in 3A conf change)
 	PendingConfIndex uint64
+	refusedCount     uint64
 }
 
 // newRaft return a raft peer with the given config
@@ -164,76 +170,231 @@ func newRaft(c *Config) *Raft {
 	if err := c.validate(); err != nil {
 		panic(err.Error())
 	}
-	// Your Code Here (2A).
-	return nil
-}
+	raft := &Raft{
+		mu:               sync.Mutex{},
+		conf:             c,
+		id:               c.ID,
+		Term:             0,
+		Vote:             c.ID,
+		RaftLog:          newLog(c.Storage),
+		Prs:              make(map[uint64]*Progress, 0),
+		State:            StateFollower,
+		votes:            make(map[uint64]bool),
+		msgs:             make([]pb.Message, 0), //nil
+		Lead:             c.ID,
+		heartbeatTimeout: c.HeartbeatTick,
+		electionTimeout:  c.ElectionTick,
+		heartbeatElapsed: 0,
+		electionElapsed:  0,
+		leadTransferee:   0,
+		PendingConfIndex: 0,
+		refusedCount:     0,
+	}
+	raft.initTime(true)
+	//rf.readPersist(persister.ReadRaftState(), persister.ReadSnapshot())
+	log.Debugf("S%d,first log.%v\n", raft.id, raft.RaftLog)
 
-// sendAppend sends an append RPC with new entries (if any) and the
-// current commit index to the given peer. Returns true if a message was sent.
-func (r *Raft) sendAppend(to uint64) bool {
-	// Your Code Here (2A).
-	return false
-}
+	// fill map
+	for _, peer := range c.peers {
+		raft.votes[peer] = false
+		raft.Prs[peer] = &Progress{
+			Match: 0,
+			Next:  0,
+		}
+	}
+	// clear votes
+	raft.clearVote()
+	// clear process
+	raft.clearProcess(raft.RaftLog.LastIndex())
 
-// sendHeartbeat sends a heartbeat RPC to the given peer.
-func (r *Raft) sendHeartbeat(to uint64) {
-	// Your Code Here (2A).
-}
-
-// tick advances the internal logical clock by a single tick.
-func (r *Raft) tick() {
-	// Your Code Here (2A).
+	state, _, err := c.Storage.InitialState()
+	if err == nil {
+		raft.Term = state.GetTerm()
+		raft.Vote = state.GetVote()
+	}
+	return raft
 }
 
 // becomeFollower transform this peer's state to Follower
-func (r *Raft) becomeFollower(term uint64, lead uint64) {
-	// Your Code Here (2A).
+func (rf *Raft) becomeFollower(term uint64, lead uint64) {
+	rf.initTime(true)
+	log.Debugf("S%d %s->follower[%d],leader%d\n", rf.id, rf.State, term, lead)
+	rf.State = StateFollower
+	rf.Term = term
+	rf.Vote = lead
+	rf.Lead = lead
+	rf.heartbeatElapsed = 0
 }
 
-// becomeCandidate transform this peer's state to candidate
-func (r *Raft) becomeCandidate() {
-	// Your Code Here (2A).
-}
-
-// becomeLeader transform this peer's state to leader
-func (r *Raft) becomeLeader() {
-	// Your Code Here (2A).
-	// NOTE: Leader should propose a noop entry on its term
+// tick advances the internal logical clock by a single tick.
+func (rf *Raft) tick() {
+	var request *pb.Message
+	request = nil
+	rf.mu.Lock()
+	if rf.State != StateLeader {
+		rf.electionElapsed++
+		//log.Debug("election:", rf.electionElapsed, "/", rf.electionTimeout)
+		if rf.electionElapsed >= rf.electionTimeout {
+			rf.initTime(true)
+			//开始选举
+			//确定term等信息，避免过期
+			request = &pb.Message{
+				MsgType: pb.MessageType_MsgHup,
+				From:    rf.id,
+				To:      rf.id,
+				Term:    rf.Term,
+				Commit:  rf.RaftLog.committed,
+			}
+			request.Index = rf.RaftLog.LastIndex()
+			request.LogTerm, _ = rf.RaftLog.Term(request.Index)
+		}
+	} else {
+		rf.heartbeatElapsed++
+		//log.Debug("heartBeat:", rf.heartbeatElapsed, "/", rf.heartbeatTimeout)
+		if rf.heartbeatElapsed >= rf.heartbeatTimeout {
+			rf.heartbeatElapsed = 0
+			//发送心跳
+			request = &pb.Message{
+				MsgType: pb.MessageType_MsgBeat,
+				From:    rf.id,
+				To:      rf.id,
+				Term:    rf.Term,
+				Entries: nil,
+				Commit:  rf.RaftLog.committed,
+			}
+			// 根据不同的peer匹配Index和LogTerm
+		}
+	}
+	rf.mu.Unlock()
+	if request != nil {
+		rf.Step(*request)
+	}
 }
 
 // Step the entrance of handle message, see `MessageType`
 // on `eraftpb.proto` for what msgs should be handled
-func (r *Raft) Step(m pb.Message) error {
-	// Your Code Here (2A).
-	switch r.State {
-	case StateFollower:
-	case StateCandidate:
-	case StateLeader:
+func (rf *Raft) Step(m pb.Message) error {
+	//local
+	switch m.MsgType {
+	case pb.MessageType_MsgHup:
+		//非Leader可以开始选举
+		rf.mu.Lock()
+		// 测试忽略term，选举本地消息，我认为需要term
+		//if rf.State != StateLeader && rf.Term == m.Term {
+		if rf.State != StateLeader {
+			rf.becomeCandidate()
+			if rf.State == StateCandidate {
+				rf.sendVoteAll(m)
+			} else if rf.State == StateLeader {
+				requet := pb.Message{
+					MsgType: pb.MessageType_MsgBeat,
+					From:    rf.id,
+					To:      rf.id,
+					Term:    rf.Term,
+					Entries: nil,
+					Commit:  rf.RaftLog.committed,
+				}
+				rf.mu.Unlock()
+				defer rf.Step(requet)
+				return nil
+			}
+		} else {
+			log.Debugf("S%d[%d] deal with old term%d local-MsgHup,now[%v]\n", rf.id, rf.Term, m.Term, rf.State)
+		}
+		rf.mu.Unlock()
+		return nil
+	case pb.MessageType_MsgBeat:
+		rf.sendHeartbeatAll(m)
+		return nil
+	default:
+
 	}
+
+	// remote
+	switch m.MsgType {
+	case pb.MessageType_MsgRequestVote:
+		rf.handleVoteRequest(m)
+		return nil
+	case pb.MessageType_MsgHeartbeat:
+		rf.handleHeartbeat(m)
+		return nil
+	case pb.MessageType_MsgAppend:
+		rf.handleAppendEntries(m)
+		return nil
+	}
+	rf.mu.Lock()
+	state := rf.State
+	rf.mu.Unlock()
+	switch state {
+	case StateFollower:
+		return nil
+
+	case StateCandidate:
+		//只有候选人处理 请求投票的回复u
+		if m.MsgType == pb.MessageType_MsgRequestVoteResponse {
+			rf.voteRequestResponseHandler(m)
+		}
+		return nil
+	case StateLeader:
+		//只有leader 接收客户端数据请求
+		if m.MsgType == pb.MessageType_MsgPropose {
+			rf.clientDataRequest(m)
+			return nil
+
+		}
+		//leader处理append请求回复
+		if m.MsgType == pb.MessageType_MsgAppendResponse {
+			rf.appendRequestResoponseHandler(m)
+			return nil
+
+		}
+		// leader处理心跳回复
+		if m.MsgType == pb.MessageType_MsgHeartbeatResponse {
+			rf.heartBeatResponseHander(m)
+			return nil
+		}
+
+	}
+	log.Debugf("S%d not catch msg%+v\n", m.To, m)
 	return nil
 }
 
-// handleAppendEntries handle AppendEntries RPC request
-func (r *Raft) handleAppendEntries(m pb.Message) {
-	// Your Code Here (2A).
-}
-
-// handleHeartbeat handle Heartbeat RPC request
-func (r *Raft) handleHeartbeat(m pb.Message) {
-	// Your Code Here (2A).
-}
-
 // handleSnapshot handle Snapshot RPC request
-func (r *Raft) handleSnapshot(m pb.Message) {
+func (rf *Raft) handleSnapshot(m pb.Message) {
 	// Your Code Here (2C).
 }
 
 // addNode add a new node to raft group
-func (r *Raft) addNode(id uint64) {
+func (rf *Raft) addNode(id uint64) {
 	// Your Code Here (3A).
 }
 
 // removeNode remove a node from raft group
-func (r *Raft) removeNode(id uint64) {
+func (rf *Raft) removeNode(id uint64) {
 	// Your Code Here (3A).
+}
+
+func (rf *Raft) initTime(b bool) {
+	rf.electionElapsed = 0
+	rf.electionTimeout = rf.conf.ElectionTick + rand.Intn(rf.conf.ElectionTick)
+}
+func (rf *Raft) clearVote() {
+	for _, k := range rf.conf.peers {
+		rf.votes[k] = false
+		//if k == rf.id {
+		//	rf.votes[k] = true
+		//}
+	}
+	rf.refusedCount = 0
+}
+func (rf *Raft) clearProcess(lastIndex uint64) {
+	for k := range rf.Prs {
+		rf.Prs[k].Match = 0
+		rf.Prs[k].Next = lastIndex + 1
+		if k == rf.id {
+			rf.Prs[k].Match = lastIndex
+		}
+	}
+	// init   match 0   ,next last+1
+	// me   match last,next last+1
 }

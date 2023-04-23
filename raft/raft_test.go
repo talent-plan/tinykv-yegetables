@@ -165,6 +165,9 @@ func TestLeaderElectionOverwriteNewerLogs2AB(t *testing.T) {
 	n.send(pb.Message{From: 1, To: 1, MsgType: pb.MessageType_MsgHup})
 	sm1 := n.peers[1].(*Raft)
 	if sm1.State != StateFollower {
+		//https://github.com/talent-plan/tinykv/pull/328/files
+		// paper ask candidate vote failed still becode candidate
+		// tinykv ask candidate get half reject become follower. no reply still be candidate
 		t.Errorf("state = %s, want StateFollower", sm1.State)
 	}
 	if sm1.Term != 2 {
